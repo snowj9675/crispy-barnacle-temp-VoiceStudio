@@ -1,21 +1,36 @@
-name: Generate VoiceStudio audio
+name: Generate cinematic narration
 
 on:
   workflow_dispatch:
     inputs:
-      text:
-        description: "Short text to synthesize (first run: 1-2 sentences recommended)"
+      script_path:
+        description: "Text file in repository (e.g. scripts/demo.txt)"
         required: true
-        default: "Hello! This is my first audio generated with VoiceStudio using GitHub Actions."
+        default: "scripts/demo.txt"
+        type: string
+      preview:
+        description: "Generate only the first ~500 characters for voice testing"
+        required: true
+        default: true
+        type: boolean
+      speed:
+        description: "Speech pace (0.88 = measured, slower than default)"
+        required: true
+        default: "0.88"
+        type: string
+      voice_instruct:
+        description: "VoiceStudio design tags: gender, age, pitch, accent"
+        required: true
+        default: "male, middle-aged, low pitch, american accent"
         type: string
       language:
-        description: "Language code (e.g. en, de)"
+        description: "Output language code"
         required: true
         default: "en"
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: voicestudio-generate-${{ github.ref }}
@@ -24,89 +39,90 @@ concurrency:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
-      - name: Set up temporary private API key
+      - name: Generate temporary API key
         shell: bash
         run: |
           key="$(openssl rand -hex 32)"
           echo "::add-mask::$key"
           echo "OMNIVOICE_API_KEY=$key" >> "$GITHUB_ENV"
 
-      - name: Validate Docker configuration and pull image
+      - name: Install audio tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Launch VoiceStudio
         run: |
           docker compose config --quiet
           docker compose pull
+          docker compose up -d
 
-      - name: Start VoiceStudio
-        run: docker compose up -d
-
-      - name: Wait for backend HTTP readiness
+      - name: Wait for backend readiness
         shell: bash
         run: |
           for i in $(seq 1 120); do
             if curl -fsS --max-time 5 http://127.0.0.1:3900/ -o /dev/null; then
-              echo "VoiceStudio web server is running."
+              echo "VoiceStudio HTTP service running"
               exit 0
             fi
             sleep 5
           done
-          echo "Server did not start within 10 minutes" >&2
           exit 1
 
-      - name: Synthesize WAV using VoiceStudio API
+      - name: Generate calm voice narration
         shell: bash
         env:
-          INPUT_TEXT: ${{ inputs.text }}
-          INPUT_LANGUAGE: ${{ inputs.language }}
+          SCRIPT_PATH: ${{ inputs.script_path }}
+          PREVIEW: ${{ inputs.preview }}
+          SPEED: ${{ inputs.speed }}
+          VOICE_INSTRUCT: ${{ inputs.voice_instruct }}
+          LANGUAGE: ${{ inputs.language }}
         run: |
-          mkdir -p output
-          printf '%s' "$INPUT_TEXT" > output/script.txt
-          # The API streams audio/wav directly. Capture status and content type,
-          # so JSON/HTML error responses cannot be mistaken for audio.
-          code="$(curl --silent --show-error --max-time 3000 \
-            --output output/speech.wav \
-            --write-out '%{http_code}' \
-            --header "Authorization: Bearer $OMNIVOICE_API_KEY" \
-            --form-string "text=$INPUT_TEXT" \
-            --form-string "language=$INPUT_LANGUAGE" \
-            http://127.0.0.1:3900/generate)"
-          if [ "$code" != "200" ]; then
-            echo "VoiceStudio generation failed: HTTP $code" >&2
-            head -c 2000 output/speech.wav >&2 || true
-            exit 1
-          fi
+          set -euo pipefail
+          # Prevent paths escaping the checkout / reading secrets.
           python3 - <<'PY'
-          import pathlib, wave
-          path = pathlib.Path('output/speech.wav')
-          with wave.open(str(path), 'rb') as f:
-              frames = f.getnframes()
-              rate = f.getframerate()
-              print(f'Audio: {frames/rate:.1f}s, {rate}Hz')
-              if frames <= 0:
-                  raise RuntimeError('Audio WAV has no frames')
-          print(f'Validated WAV: {path.stat().st_size:,} bytes')
+          from pathlib import Path
+          import os
+          root = Path.cwd().resolve()
+          path = (root / os.environ["SCRIPT_PATH"]).resolve()
+          assert path.is_relative_to(root / "scripts"), "Input must be under scripts/"
+          assert path.suffix == ".txt" and path.is_file(), "Input must be a text file"
           PY
+          TARGET="generated/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          extra=()
+          if [ "$PREVIEW" = "true" ]; then extra+=(--preview); fi
+          python3 scripts/generate_narration.py \
+            --script "$SCRIPT_PATH" \
+            --target "$TARGET" \
+            --language "$LANGUAGE" \
+            --speed "$SPEED" \
+            --voice-instruct "$VOICE_INSTRUCT" \
+            "${extra[@]}"
+          echo "TARGET_DIR=$TARGET" >> "$GITHUB_ENV"
 
-      - name: Upload generated audio
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: voicestudio-audio-${{ github.run_number }}
-          path: |
-            output/speech.wav
-            output/script.txt
-          if-no-files-found: error
-          retention-days: 14
+      - name: Commit generated MP3 to repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$TARGET_DIR/narration.mp3" "$TARGET_DIR/script.txt" "$TARGET_DIR/manifest.json"
+          git commit -m "Add generated narration for run ${GITHUB_RUN_ID}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "Audio committed to $TARGET_DIR/narration.mp3"
 
-      - name: Diagnostics if generation fails
+      - name: Failure diagnostics
         if: failure()
         run: |
           docker compose ps
-          docker compose logs --tail 150
+          docker compose logs --tail 120
 
-      - name: Shut down container
+      - name: Stop container
         if: always()
         run: docker compose down
