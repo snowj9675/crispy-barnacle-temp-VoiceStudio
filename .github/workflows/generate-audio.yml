@@ -1,128 +1,89 @@
-name: Generate cinematic narration
+name: Generate Kokoro George narration
 
 on:
   workflow_dispatch:
     inputs:
       script_path:
-        description: "Text file in repository (e.g. scripts/demo.txt)"
+        description: "Text file within scripts/ (e.g. scripts/demo.txt)"
         required: true
         default: "scripts/demo.txt"
         type: string
       preview:
-        description: "Generate only the first ~500 characters for voice testing"
+        description: "Short voice preview (~500 characters)"
         required: true
         default: true
         type: boolean
       speed:
-        description: "Speech pace (0.88 = measured, slower than default)"
+        description: "George's narration speed (Colab default: 0.90)"
         required: true
-        default: "0.88"
-        type: string
-      voice_instruct:
-        description: "VoiceStudio design tags: gender, age, pitch, accent"
-        required: true
-        default: "male, middle-aged, low pitch, american accent"
-        type: string
-      language:
-        description: "Output language code"
-        required: true
-        default: "en"
+        default: "0.90"
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: voicestudio-generate-${{ github.ref }}
+  group: kokoro-george-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  generate:
-    runs-on: ubuntu-latest
+  narrate:
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
 
-      - name: Generate temporary API key
-        shell: bash
-        run: |
-          key="$(openssl rand -hex 32)"
-          echo "::add-mask::$key"
-          echo "OMNIVOICE_API_KEY=$key" >> "$GITHUB_ENV"
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
 
-      - name: Install audio tools
+      - name: Install Kokoro and audio dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y espeak-ng ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install "kokoro==0.9.4" "soundfile>=0.12" "numpy<3"
 
-      - name: Launch VoiceStudio
-        run: |
-          docker compose config --quiet
-          docker compose pull
-          docker compose up -d
-
-      - name: Wait for backend readiness
-        shell: bash
-        run: |
-          for i in $(seq 1 120); do
-            if curl -fsS --max-time 5 http://127.0.0.1:3900/ -o /dev/null; then
-              echo "VoiceStudio HTTP service running"
-              exit 0
-            fi
-            sleep 5
-          done
-          exit 1
-
-      - name: Generate calm voice narration
+      - name: Generate George narration
         shell: bash
         env:
           SCRIPT_PATH: ${{ inputs.script_path }}
           PREVIEW: ${{ inputs.preview }}
           SPEED: ${{ inputs.speed }}
-          VOICE_INSTRUCT: ${{ inputs.voice_instruct }}
-          LANGUAGE: ${{ inputs.language }}
         run: |
           set -euo pipefail
-          # Prevent paths escaping the checkout / reading secrets.
-          python3 - <<'PY'
+          python - <<'PY'
           from pathlib import Path
           import os
-          root = Path.cwd().resolve()
-          path = (root / os.environ["SCRIPT_PATH"]).resolve()
-          assert path.is_relative_to(root / "scripts"), "Input must be under scripts/"
-          assert path.suffix == ".txt" and path.is_file(), "Input must be a text file"
+          root = (Path.cwd() / "scripts").resolve()
+          path = (Path.cwd() / os.environ["SCRIPT_PATH"]).resolve()
+          if not path.is_relative_to(root) or path.suffix != ".txt" or not path.is_file():
+              raise SystemExit("Input must be an existing .txt file inside scripts/")
           PY
           TARGET="generated/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          extra=()
-          if [ "$PREVIEW" = "true" ]; then extra+=(--preview); fi
-          python3 scripts/generate_narration.py \
+          options=()
+          if [ "$PREVIEW" = "true" ]; then options+=(--preview); fi
+          python scripts/generate_kokoro_george.py \
             --script "$SCRIPT_PATH" \
             --target "$TARGET" \
-            --language "$LANGUAGE" \
             --speed "$SPEED" \
-            --voice-instruct "$VOICE_INSTRUCT" \
-            "${extra[@]}"
+            "${options[@]}"
           echo "TARGET_DIR=$TARGET" >> "$GITHUB_ENV"
 
-      - name: Commit generated MP3 to repository
+      - name: Commit MP3 straight to GitHub
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "$TARGET_DIR/narration.mp3" "$TARGET_DIR/script.txt" "$TARGET_DIR/manifest.json"
-          git commit -m "Add generated narration for run ${GITHUB_RUN_ID}"
+          git commit -m "Kokoro George narration for run ${GITHUB_RUN_ID}"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
-          echo "Audio committed to $TARGET_DIR/narration.mp3"
-
-      - name: Failure diagnostics
-        if: failure()
-        run: |
-          docker compose ps
-          docker compose logs --tail 120
-
-      - name: Stop container
-        if: always()
-        run: docker compose down
+          echo "Published at $TARGET_DIR/narration.mp3"
