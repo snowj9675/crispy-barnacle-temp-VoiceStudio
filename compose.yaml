@@ -1,0 +1,15 @@
+services:
+  voicestudio:
+    image: ghcr.io/debpalash/voicestudio:stable
+    container_name: voicestudio
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3900:3900"
+    environment:
+      OMNIVOICE_API_KEY: "${OMNIVOICE_API_KEY:?Set OMNIVOICE_API_KEY in .env}"
+      OMNIVOICE_ANALYTICS_DISABLED: "1"
+    volumes:
+      - voicestudio_data:/app/omnivoice_data
+
+volumes:
+  voicestudio_data:
