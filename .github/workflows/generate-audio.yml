@@ -1,0 +1,112 @@
+name: Generate VoiceStudio audio
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "Short text to synthesize (first run: 1-2 sentences recommended)"
+        required: true
+        default: "Hello! This is my first audio generated with VoiceStudio using GitHub Actions."
+        type: string
+      language:
+        description: "Language code (e.g. en, de)"
+        required: true
+        default: "en"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voicestudio-generate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up temporary private API key
+        shell: bash
+        run: |
+          key="$(openssl rand -hex 32)"
+          echo "::add-mask::$key"
+          echo "OMNIVOICE_API_KEY=$key" >> "$GITHUB_ENV"
+
+      - name: Validate Docker configuration and pull image
+        run: |
+          docker compose config --quiet
+          docker compose pull
+
+      - name: Start VoiceStudio
+        run: docker compose up -d
+
+      - name: Wait for backend HTTP readiness
+        shell: bash
+        run: |
+          for i in $(seq 1 120); do
+            if curl -fsS --max-time 5 http://127.0.0.1:3900/ -o /dev/null; then
+              echo "VoiceStudio web server is running."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Server did not start within 10 minutes" >&2
+          exit 1
+
+      - name: Synthesize WAV using VoiceStudio API
+        shell: bash
+        env:
+          INPUT_TEXT: ${{ inputs.text }}
+          INPUT_LANGUAGE: ${{ inputs.language }}
+        run: |
+          mkdir -p output
+          printf '%s' "$INPUT_TEXT" > output/script.txt
+          # The API streams audio/wav directly. Capture status and content type,
+          # so JSON/HTML error responses cannot be mistaken for audio.
+          code="$(curl --silent --show-error --max-time 3000 \
+            --output output/speech.wav \
+            --write-out '%{http_code}' \
+            --header "Authorization: Bearer $OMNIVOICE_API_KEY" \
+            --form-string "text=$INPUT_TEXT" \
+            --form-string "language=$INPUT_LANGUAGE" \
+            http://127.0.0.1:3900/generate)"
+          if [ "$code" != "200" ]; then
+            echo "VoiceStudio generation failed: HTTP $code" >&2
+            head -c 2000 output/speech.wav >&2 || true
+            exit 1
+          fi
+          python3 - <<'PY'
+          import pathlib, wave
+          path = pathlib.Path('output/speech.wav')
+          with wave.open(str(path), 'rb') as f:
+              frames = f.getnframes()
+              rate = f.getframerate()
+              print(f'Audio: {frames/rate:.1f}s, {rate}Hz')
+              if frames <= 0:
+                  raise RuntimeError('Audio WAV has no frames')
+          print(f'Validated WAV: {path.stat().st_size:,} bytes')
+          PY
+
+      - name: Upload generated audio
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicestudio-audio-${{ github.run_number }}
+          path: |
+            output/speech.wav
+            output/script.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Diagnostics if generation fails
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail 150
+
+      - name: Shut down container
+        if: always()
+        run: docker compose down
