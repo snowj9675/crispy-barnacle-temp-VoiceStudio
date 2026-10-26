@@ -1,0 +1,10 @@
+{
+  "profile": "calm-reflective-narrator",
+  "language": "en",
+  "voice_instruct": "male, middle-aged, low pitch, american accent",
+  "speed": 0.88,
+  "preview": true,
+  "chunks": 2,
+  "estimated_audio_seconds": 34.43,
+  "audio": "narration.mp3"
+}
