@@ -36,6 +36,13 @@ Open **Actions → VoiceStudio Docker smoke test → Run workflow**. The workflo
 
 To host VoiceStudio continuously, use Docker on your own computer, a dedicated server, or a machine with an appropriate GPU. Vercel's serverless functions and GitHub-hosted Actions are not suited to an always-running GPU speech application.
 
+
+## Generate an audio WAV in GitHub Actions
+
+Use **Actions → Generate VoiceStudio audio → Run workflow**. Enter a short sentence and its language code (e.g. `en`). The action starts the official container, requests a real speech generation via `POST /generate`, validates that the response is a WAV file, and uploads an artifact called `voicestudio-audio-<run number>` containing `speech.wav` and `script.txt`. Download it from the workflow run's **Artifacts** section.
+
+This workflow may fail on GitHub-hosted CPU runners if the selected model is too resource intensive or the model download takes too long; check the **Diagnostics if generation fails** step. A successful Docker smoke test alone does not validate TTS inference. Each run uses a new, disposable random key; no GitHub secret is necessary.
+
 ### GPU notes
 
 For supported Linux NVIDIA hosts, follow the upstream instructions for the NVIDIA Container Toolkit and add the Compose GPU reservation/device configuration suited to your host. Default config is intended for CPU operation.
