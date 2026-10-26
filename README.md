@@ -37,18 +37,22 @@ Open **Actions → VoiceStudio Docker smoke test → Run workflow**. The workflo
 To host VoiceStudio continuously, use Docker on your own computer, a dedicated server, or a machine with an appropriate GPU. Vercel's serverless functions and GitHub-hosted Actions are not suited to an always-running GPU speech application.
 
 
-## Generate YouTube narration (committed to this repo)
+## YouTube narration: Kokoro George (selected voice)
 
-**Actions → Generate cinematic narration → Run workflow**. The default `scripts/demo.txt` is a reflective Stoic voice test. Set `preview=true` (recommended) to create a short sample first. Choose `speed=0.88` and the voice design attributes `male, middle-aged, low pitch, american accent`; these are supported VoiceStudio attributes, not a guaranteed particular actor's voice.
+The narration workflow now uses **Kokoro-82M / bm_george**, a British English male preset. This is the exact **voice ID** chosen from the Colab audition; output uses the same **0.90 speed** default. The earlier VoiceStudio Docker smoke test remains available separately.
 
-To produce a full audiobook-style narration, create a UTF-8 text file under `scripts/` (for example `scripts/jung-summary.txt`) and enter that path in the workflow. Set `preview=false`. The generator divides the script into smaller requests, synthesizes them sequentially, combines the audio, and compresses it to 64 kbps mono MP3.
+**Use:** [Actions → Generate Kokoro George narration](../../actions/workflows/generate-audio.yml) → Run workflow.
 
-Instead of uploading a GitHub Actions artifact, the workflow commits to `generated/<run_id>-<attempt>/` on the current branch:
-- `narration.mp3`: synthesized narration
-- `script.txt`: exact text used (preview truncates to ~500 characters)
-- `manifest.json`: voice parameters and approximate duration
+- `script_path`: a UTF-8 .txt inside `scripts/` (default: `scripts/demo.txt`)
+- `preview=true`: read only the first approximately 500 characters (test first)
+- `preview=false`: narrate the whole text, including long YouTube scripts
+- `speed=0.90`: the selected Colab pacing
 
-**Important limitations:** GitHub is not intended for large generated-media storage. Each file must stay below 100 MB, and repeated commits expand repository history permanently. A 30-minute mono 64 kbps MP3 is roughly 14 MB; use object storage when the narrator configuration is established. A GitHub-hosted CPU may also be too slow for 20–30-minute production. WAV/MP3 generation has not yet been verified with these long scripts. The voice-design tags may need refinement or a **licensed, clean reference recording** (via an upcoming configuration) to achieve consistently human, soft, deep narration. Each run creates a fresh temporary API key; no repository secret is needed.
+The generator works in bounded sections to avoid loading a whole audiobook in memory and adds 0.3-second section / 0.6-second paragraph pauses. Audio is encoded as mono **96 kbps MP3**. The GitHub Actions run commits `generated/<run-id>-<attempt>/narration.mp3`, `script.txt`, and `manifest.json` directly to the repository. **No GitHub Actions artifacts** or API keys are needed for the narrator workflow.
+
+For a new episode, add a file such as `scripts/machiavelli-summary.txt`, then run the workflow with that path. Preview first.
+
+**Limitations:** GitHub Actions has no dedicated GPU and synthesis of a 20–30-minute video may be slow or hit runner limits. Git commits are a temporary output store: MP3 files accumulate permanently in repo history and files larger than 100 MB are rejected (our safety cap is 95 MB). Later we can switch the destination to object storage. The model may still make pronunciation mistakes or vary slightly at chunk boundaries.
 
 ### GPU notes
 
