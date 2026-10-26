@@ -1,0 +1,10 @@
+{
+  "engine": "kokoro-82m",
+  "voice": "bm_george",
+  "accent": "British English",
+  "speed": 0.9,
+  "preview": true,
+  "sections": 3,
+  "duration_seconds": 37.93,
+  "audio": "narration.mp3"
+}
