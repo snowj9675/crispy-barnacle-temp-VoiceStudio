@@ -1,0 +1,50 @@
+# HUMAN THESIS — EPISODE INPUT TEMPLATE
+# This is a planning template. The present narration workflow still reads plain
+# UTF-8 .txt inside scripts/ and does NOT yet parse this metadata automatically.
+#
+# Proposed future input structure (YAML front matter + narration):
+#
+# ---
+# id: self-awareness-and-silence
+# title: The Quiet Power of Knowing Yourself
+# alternate_titles:
+#   - Why Silence Reveals More Than Words
+# description: |
+#   A reflective study of self-awareness, Jung, and the price of approval.
+# tags: [Carl Jung, self awareness, philosophy, psychology, introspection]
+# voice:
+#   engine: kokoro
+#   preset: bm_george
+#   speed: 0.90
+#   pause_between_sections_ms: 300
+#   pause_between_paragraphs_ms: 600
+# visuals:
+#   catalog: catalog.json
+#   theme: dark-cinematic
+#   required_concepts: [solitude, mirror, mask, fog, thoughtful silhouettes]
+#   avoid: [swimwear, glamour, beaches, distracting stock lifestyle]
+#   scene_duration_seconds: [7, 14]
+# captions:
+#   position: lower-middle
+#   font: DejaVu Sans
+#   color: warm-white
+#   active_word_color: amber
+#   backdrop_opacity: 0.54
+# thumbnail:
+#   concept: Lone silhouette next to a window, half face in shadow
+#   headline: THE POWER OF SILENCE
+#   headline_max_words: 5
+#   mood: introspective, dramatic, minimal
+# output:
+#   resolution: 1920x1080
+#   fps: 30
+#   preview: true
+# ---
+#
+# NARRATION BELOW (no timestamps or production metadata inside spoken text):
+#
+# There is a moment when silence begins to feel less like absence,
+# and more like understanding.
+#
+# The world might expect you to explain yourself.
+# But not everything meaningful needs to be spoken.
