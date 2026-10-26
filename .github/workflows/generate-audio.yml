@@ -75,13 +75,30 @@ jobs:
             "${options[@]}"
           echo "TARGET_DIR=$TARGET" >> "$GITHUB_ENV"
 
+      - name: Restore Whisper model cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: faster-whisper-small-en-v1
+
+      - name: Install word-timing engine
+        run: python -m pip install "faster-whisper>=1.1,<2"
+
+      - name: Generate synchronized subtitles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/generate_subtitles.py \
+            --audio "$TARGET_DIR/narration.mp3" \
+            --target "$TARGET_DIR"
+
       - name: Commit MP3 straight to GitHub
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- "$TARGET_DIR/narration.mp3" "$TARGET_DIR/script.txt" "$TARGET_DIR/manifest.json"
+          git add -- "$TARGET_DIR/narration.mp3" "$TARGET_DIR/script.txt" "$TARGET_DIR/manifest.json" "$TARGET_DIR/captions.ass" "$TARGET_DIR/captions.srt" "$TARGET_DIR/word_timings.json"
           git commit -m "Kokoro George narration for run ${GITHUB_RUN_ID}"
           git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
