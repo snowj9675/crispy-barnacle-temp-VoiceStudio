@@ -37,11 +37,18 @@ Open **Actions → VoiceStudio Docker smoke test → Run workflow**. The workflo
 To host VoiceStudio continuously, use Docker on your own computer, a dedicated server, or a machine with an appropriate GPU. Vercel's serverless functions and GitHub-hosted Actions are not suited to an always-running GPU speech application.
 
 
-## Generate an audio WAV in GitHub Actions
+## Generate YouTube narration (committed to this repo)
 
-Use **Actions → Generate VoiceStudio audio → Run workflow**. Enter a short sentence and its language code (e.g. `en`). The action starts the official container, requests a real speech generation via `POST /generate`, validates that the response is a WAV file, and uploads an artifact called `voicestudio-audio-<run number>` containing `speech.wav` and `script.txt`. Download it from the workflow run's **Artifacts** section.
+**Actions → Generate cinematic narration → Run workflow**. The default `scripts/demo.txt` is a reflective Stoic voice test. Set `preview=true` (recommended) to create a short sample first. Choose `speed=0.88` and the voice design attributes `male, middle-aged, low pitch, american accent`; these are supported VoiceStudio attributes, not a guaranteed particular actor's voice.
 
-This workflow may fail on GitHub-hosted CPU runners if the selected model is too resource intensive or the model download takes too long; check the **Diagnostics if generation fails** step. A successful Docker smoke test alone does not validate TTS inference. Each run uses a new, disposable random key; no GitHub secret is necessary.
+To produce a full audiobook-style narration, create a UTF-8 text file under `scripts/` (for example `scripts/jung-summary.txt`) and enter that path in the workflow. Set `preview=false`. The generator divides the script into smaller requests, synthesizes them sequentially, combines the audio, and compresses it to 64 kbps mono MP3.
+
+Instead of uploading a GitHub Actions artifact, the workflow commits to `generated/<run_id>-<attempt>/` on the current branch:
+- `narration.mp3`: synthesized narration
+- `script.txt`: exact text used (preview truncates to ~500 characters)
+- `manifest.json`: voice parameters and approximate duration
+
+**Important limitations:** GitHub is not intended for large generated-media storage. Each file must stay below 100 MB, and repeated commits expand repository history permanently. A 30-minute mono 64 kbps MP3 is roughly 14 MB; use object storage when the narrator configuration is established. A GitHub-hosted CPU may also be too slow for 20–30-minute production. WAV/MP3 generation has not yet been verified with these long scripts. The voice-design tags may need refinement or a **licensed, clean reference recording** (via an upcoming configuration) to achieve consistently human, soft, deep narration. Each run creates a fresh temporary API key; no repository secret is needed.
 
 ### GPU notes
 
