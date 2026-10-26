@@ -63,3 +63,19 @@ For supported Linux NVIDIA hosts, follow the upstream instructions for the NVIDI
 VoiceStudio source is AGPL-3.0. Model weights and voices may have separate usage terms. Use only voice samples you have permission to clone.
 
 Upstream docs: [Docker installation](https://github.com/debpalash/VoiceStudio/blob/main/docs/install/docker.md).
+
+## Word-synchronized subtitles (new)
+
+The **Generate Kokoro George narration** workflow now creates three additional files beside `narration.mp3`:
+
+- `captions.ass`: cinematic, centered just below midpoint (1920×1080 coordinates 960,735); warm-gold karaoke progress, clear text and translucent charcoal backing. Works when burned into video with FFmpeg/libass.
+- `captions.srt`: regular captions for YouTube upload/accessibility (no word highlighting).
+- `word_timings.json`: timestamped words and grouped cues for the future background-video/caption compositor.
+
+Caption times are estimated **from the finished MP3** with faster-whisper `small.en`, *not* calculated from the script. This preserves George's actual pauses. Please review the results—Whisper may mishear names or create timings errors. The model is cached using `actions/cache` to avoid repeatedly downloading it, but cache availability and retention are controlled by GitHub. The large Kokoro voice/model is cached through Hugging Face only when configured; the current setup downloads Kokoro weights each fresh runner invocation.
+
+### Future input format
+
+See [`input/EPISODE_TEMPLATE.txt`](input/EPISODE_TEMPLATE.txt) for the proposed episode metadata: title, alternate titles, description, tags, narration voice/speed/pauses, visual concepts and exclusions, captions, thumbnail brief, output resolution and preview. **The existing workflow does not yet trigger on input-folder changes or parse this format.** For now place narration-only text under `scripts/*.txt` and manually run the workflow. The input template is a specification for the next stage, not an active automation.
+
+Note: this repository does not currently contain `catalog.json`, so visual-selection integration is not active yet.
