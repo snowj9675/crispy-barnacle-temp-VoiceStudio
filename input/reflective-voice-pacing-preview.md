@@ -21,7 +21,7 @@ tags: [psychology, philosophy, self awareness]
 ---
 
 Why do some people feel exhausted, even when nothing unusual has happened? The answer is rarely as simple as having a difficult day. Sometimes, the deepest exhaustion comes from pretending to be someone we are not.
-
+ 
 Carl Jung believed that the roles we play in society can gradually become the limits of our identity. The tragedy is not that we wear masks. The tragedy begins when we forget there is a person underneath them.
 
 And perhaps, for the first time, we can allow ourselves to be silent.
