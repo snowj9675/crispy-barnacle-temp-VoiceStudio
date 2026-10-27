@@ -65,3 +65,37 @@ Selection uses transcript topics and catalog descriptions/categories, then rejec
 ## Practical capacity
 
 The first job may download Kokoro and Whisper model files; GitHub cache attempts to preserve model weights across workflows, subject to GitHub cache eviction/limits. Full 1080p rendering is CPU intensive and may exceed GitHub-hosted runner time/disk limits. Our initial test deliberately uses a short preview. R2 objects are uploaded with `video/mp4` content type and faststart metadata for browser playback.
+
+## Reflective narration pacing (October 2026)
+
+George's older audiobook path synthesized large multi-sentence chunks and inserted silence
+only at chunk/paragraph endings. That could make a 20-minute episode feel rushed even when
+the nominal speed was slow.
+
+The new `scripts/generate_kokoro_george.py`:
+- Synthetically speaks each sentence or bounded clause separately, allowing natural phrase-final intonation.
+- Inserts **340 ms** after a statement, **500 ms** after a question, and **880 ms** between paragraphs by default.
+- Supports per-episode overrides and reports total inserted pause time in `manifest.json`.
+- Offers **gentle** mastering (65 Hz high-pass, low-ratio dynamics smoothing, target -17 LUFS,
+  true-peak limit -1.5 dBTP) with **128 kbps MP3** output. It does **not** pitch-shift, stretch,
+  remove silence, or layer distracting effects onto George.
+- Generates captions from the post-mastering MP3, so highlights follow the actual voice and pauses.
+
+Set values in the YAML header of `input/<episode>.md`:
+
+```yaml
+voice:
+  speed: 0.86
+  mastering: gentle
+  pauses:
+    sentence_ms: 400
+    question_ms: 600
+    paragraph_ms: 960
+```
+
+The sample `input/reflective-voice-pacing-preview.md` demonstrates those values at preview length.
+For slower, more meditative pacing, slightly raise pauses first, rather than excessively reducing
+speech speed. The standalone narration workflow also benefits from the new default pacing.
+
+**Important:** Previously generated MP3/MP4 files on R2 are unchanged. New settings apply to
+subsequent workflow runs. Regenerate an episode only after listening to a short test.
