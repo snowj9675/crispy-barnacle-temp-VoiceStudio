@@ -360,7 +360,7 @@ def publish(output):
     summary=os.environ.get("GITHUB_STEP_SUMMARY")
     msg=(f"## Human Thesis video ready\n\n**{meta.get('title',name)}**\n\n"
          f"[▶ Play or download MP4]({url})\n\n"
-         f"R2 key: \`{uploaded['video.mp4']}\`\n\n"
+         f"R2 key: `{uploaded['video.mp4']}`\n\n"
          f"Link type: {link_type}\n\n")
     if summary:
         with open(summary,"a",encoding="utf-8") as f: f.write(msg)
