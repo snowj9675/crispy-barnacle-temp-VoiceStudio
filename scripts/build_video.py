@@ -2,6 +2,7 @@
 """Human Thesis video builder: editorial input, footage selection, FFmpeg render, R2 publish."""
 import argparse
 import hashlib
+import html
 import json
 import math
 import os
@@ -347,21 +348,45 @@ def publish(output):
         print(f"Verified R2 upload: {key}",flush=True)
         uploaded[filename]=key
     public=(os.environ.get("R2_PUBLIC_BASE_URL") or "").rstrip("/")
+    # Signed GET links must use the S3 API hostname; a configured public domain
+    # avoids signed credentials embedded in the URL entirely.
     if public:
         url=public+"/"+quote(uploaded["video.mp4"],safe="/")
-        link_type="public (requires enabled R2 public domain)"
+        link_type="public R2 playback domain"
     else:
+        # Cloudflare documents Basic GetObject presigning. Do not add
+        # ResponseContentType: it can generate a signed query R2 doesn't accept.
         url=s3.generate_presigned_url("get_object",
-            Params={"Bucket":bucket,"Key":uploaded["video.mp4"],
-                    "ResponseContentType":"video/mp4"},ExpiresIn=7*24*3600)
-        link_type="private signed link (expires after 7 days)"
+            Params={"Bucket":bucket,"Key":uploaded["video.mp4"]},
+            ExpiresIn=7*24*3600, HttpMethod="GET")
+        link_type="temporary signed link (7 days); configure R2_PUBLIC_BASE_URL for permanent playback"
+
+    # A successful upload HEAD does NOT prove the browser URL works.
+    # Verify using the exact URL that appears in the published message.
+    try:
+        with requests.get(url, headers={"Range":"bytes=0-1023"},
+                          stream=True,timeout=35,allow_redirects=True) as check:
+            status=check.status_code
+            if status not in (200,206):
+                raise RuntimeError(f"Playback URL HTTP {status}; check public domain or signature")
+            chunk=next(check.iter_content(1024),b"")
+            if not chunk:
+                raise RuntimeError("Playback URL returned no MP4 content")
+    except Exception as exc:
+        raise RuntimeError(f"R2 playback verification failed: {exc}") from None
     write_json(output/"upload.json",{"bucket":bucket,"objects":uploaded,
-        "link_type":link_type,"url":url})
+        "link_type":link_type,"url":url,"playback_verified":True})
     summary=os.environ.get("GITHUB_STEP_SUMMARY")
+    # HTML-escape '&' to avoid GitHub interpreting ampersands in query strings.
+    safe_url=html.escape(url,quote=True)
     msg=(f"## Human Thesis video ready\n\n**{meta.get('title',name)}**\n\n"
-         f"[▶ Play or download MP4]({url})\n\n"
-         f"R2 key: `{uploaded['video.mp4']}`\n\n"
-         f"Link type: {link_type}\n\n")
+         f'<a href="{safe_url}">▶ Play verified MP4</a>\n\n'
+         f"**HTTP verification:** success (200/206)\\n\\n"
+         f"R2 key: \`{uploaded['video.mp4']}\`\\n\\n"
+         f"Link type: {link_type}\\n\\n"
+         "If GitHub masks any signed-link text, enable a public R2 domain and "
+         "set the Actions variable R2_PUBLIC_BASE_URL.\\n")
+    msg=msg.replace("\\n","\n")
     if summary:
         with open(summary,"a",encoding="utf-8") as f: f.write(msg)
     print("R2 upload verified. Playback link written to the GitHub Actions step summary.",flush=True)
