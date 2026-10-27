@@ -204,6 +204,10 @@ def plan(output, catalog_file):
     cues = json.loads((output/"word_timings.json").read_text())["cues"]
     duration,_,_ = ffprobe(output/"narration.mp3")
     catalog = get_catalog(catalog_file)
+    # Full films reuse an editorial pool instead of downloading a new file for
+    # every 14-second scene. Keeps runner storage and bandwidth bounded.
+    max_unique = max(4, int(os.environ.get("MAX_UNIQUE_CLIPS", "42")))
+    chosen = {}
     visuals = meta.get("visuals") or {}
     hints = visuals.get("keywords") or visuals.get("search_tags") or []
     exclusions = visuals.get("avoid") or []
@@ -221,7 +225,9 @@ def plan(output, catalog_file):
         scene_text = " ".join(c["text"] for c in cues
             if float(c["end"]) > t and float(c["start"]) < t+span)
         topics = sorted(scene_topics(scene_text))
-        item,score = pick(catalog,topics,scene_text,prior, i, hints, exclusions)
+        pool = catalog if len(chosen) < max_unique else list(chosen.values())
+        item,score = pick(pool,topics,scene_text,prior, i, hints, exclusions)
+        chosen[item["uid"]] = item
         prior.append(item["uid"])
         sections.append({"index":i+1,"start":round(t,3),"seconds":round(span,3),
             "end":round(t+span,3),"narration":scene_text[:400],
@@ -232,7 +238,7 @@ def plan(output, catalog_file):
         "selection_method":"keyword and symbolic concept scoring; metadata-only, review recommended",
         "scenes":sections}
     write_json(output/"storyboard.json",result)
-    print(f"Storyboard ready: {len(sections)} scenes; {duration:.1f}s",flush=True)
+    print(f"Storyboard ready: {len(sections)} scenes; {duration:.1f}s; {len(chosen)} distinct sources",flush=True)
 
 def fetch_video(item, cache_dir):
     uid = item["uid"]
@@ -241,13 +247,13 @@ def fetch_video(item, cache_dir):
     if dest.exists():
         return dest
     tmp = dest.with_suffix(".download")
-    limit = 180 * 1024 * 1024
+    limit = int(os.environ.get("MAX_STOCK_VIDEO_MB", "90")) * 1024 * 1024
     try:
         with requests.get(item["url"],stream=True,timeout=(20,90),
                           headers={"User-Agent":"HumanThesisVideoBuilder/1.0"}) as res:
             res.raise_for_status()
             if int(res.headers.get("content-length") or 0) > limit:
-                raise ValueError("Source video too large")
+                raise ValueError(f"Source video too large ({int(res.headers.get('content-length'))//(1024*1024)} MB > {limit//(1024*1024)} MB limit)")
             size=0
             with tmp.open("wb") as f:
                 for chunk in res.iter_content(1024*1024):
@@ -275,12 +281,71 @@ def render(output):
     unique={s["video"]["uid"]:s["video"] for s in scenes}
     print(f"Downloading {len(unique)} unique catalog videos with 3 workers",flush=True)
     clips={}
+    failed = {}
     with ThreadPoolExecutor(max_workers=3) as ex:
         pending={ex.submit(fetch_video,item,cache):uid for uid,item in unique.items()}
         for future in as_completed(pending):
             uid=pending[future]
-            clips[uid]=future.result()
-            print("Downloaded:",uid,flush=True)
+            try:
+                clips[uid]=future.result()
+                print("Downloaded:",uid,flush=True)
+            except Exception as exc:
+                failed[uid] = str(exc)
+                # A single missing/oversized source must NOT abort the film.
+                print(f"Skipping unusable source {uid}: {exc}",flush=True)
+
+    if failed:
+        # Select substitute clips using the narration topics for the scene.
+        # Exclude sources already known to fail; avoid pulling huge files.
+        catalog = get_catalog("catalog.json")
+        meta = json.loads((output/"episode.json").read_text(encoding="utf-8"))
+        visuals = meta.get("visuals") or {}
+        hints = visuals.get("keywords") or visuals.get("search_tags") or []
+        excludes = visuals.get("avoid") or []
+        if isinstance(hints,str): hints=[hints]
+        if isinstance(excludes,str): excludes=[excludes]
+        blocked = set(failed)
+        for uid in list(failed):
+            affected=[s for s in scenes if s["video"]["uid"]==uid]
+            example=affected[0]
+            topics=set(example.get("topics") or scene_topics(example.get("narration","")))
+            success=None
+            # Try a bounded number of new candidates. On any failure move on,
+            # then fall back to an already-downloaded valid clip if necessary.
+            for attempt in range(16):
+                candidates=[v for v in catalog if v["uid"] not in blocked
+                            and v["uid"] not in unique and v["uid"] not in clips]
+                if not candidates:
+                    break
+                replacement,score=pick(candidates,topics,example.get("narration",""),
+                                       list(clips),attempt,hints,excludes)
+                try:
+                    path=fetch_video(replacement,cache)
+                    clips[replacement["uid"]]=path
+                    success=(replacement,score)
+                    print(f"Replaced {uid} with {replacement['uid']} (match {score})",flush=True)
+                    break
+                except Exception as exc:
+                    blocked.add(replacement["uid"])
+                    print(f"Alternative {replacement['uid']} rejected: {exc}",flush=True)
+            if success is None and clips:
+                # No more suitable downloadable replacements; reuse the
+                # highest-scoring already verified clip rather than aborting.
+                available=[v for v in catalog if v["uid"] in clips]
+                if available:
+                    success=pick(available,topics,example.get("narration",""),
+                                 [],len(affected),hints,excludes)
+                    print(f"Reusing verified stock clip for {uid}",flush=True)
+            if success is None:
+                raise RuntimeError(f"No usable footage available after replacing {uid}: {failed[uid]}")
+            substitute,score=success
+            for scene in affected:
+                scene["video"]={k:v for k,v in substitute.items() if k!="semantic"}
+                scene["match_score"]=score
+                scene["replaced_unavailable_source"]=uid
+        # Preserve the actual scene selections for future auditing.
+        write_json(output/"storyboard.json",plan)
+        print(f"Recovered {len(failed)} unavailable catalog sources",flush=True)
     resolution = "1280:720" if json.loads((output/"episode.json").read_text()).get("preview") else "1920:1080"
     parts=output/"segments"
     parts.mkdir(exist_ok=True)
