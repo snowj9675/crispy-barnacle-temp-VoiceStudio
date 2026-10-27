@@ -117,9 +117,15 @@ jobs:
           import json, subprocess, os
           target=os.environ["TARGET"]
           episode=json.load(open(f"{target}/episode.json"))
+          voice=episode["voice"]
+          pauses=voice["pauses"]
           args=["python","scripts/generate_kokoro_george.py",
                 "--script",f"{target}/narration_source.txt",
-                "--target",target,"--speed",str(episode["voice"]["speed"])]
+                "--target",target,"--speed",str(voice["speed"]),
+                "--sentence-pause-ms",str(pauses["sentence_ms"]),
+                "--question-pause-ms",str(pauses["question_ms"]),
+                "--paragraph-pause-ms",str(pauses["paragraph_ms"]),
+                "--mastering",voice["mastering"]]
           if episode["preview"]:
               args.append("--preview")
           subprocess.run(args,check=True)
