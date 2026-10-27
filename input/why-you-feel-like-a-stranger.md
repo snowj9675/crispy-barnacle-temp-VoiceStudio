@@ -5,7 +5,7 @@ preview: false
 voice:
   engine: kokoro
   preset: bm_george
-  speed: 0.90
+  speed: 0.86
 visuals:
   keywords:
     - cinematic lonely silhouette
