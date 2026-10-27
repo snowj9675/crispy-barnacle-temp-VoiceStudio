@@ -96,10 +96,29 @@ def parse_episode(path, output, override):
     meta["slug"] = name
     meta["source_file"] = str(path.relative_to(Path.cwd()))
     meta["preview"] = str(override).lower() == "true" if override else bool(meta.get("preview", True))
-    speed = float((meta.get("voice") or {}).get("speed", 0.90))
+    voice = meta.get("voice") or {}
+    if not isinstance(voice, dict):
+        raise ValueError("voice must be a YAML mapping")
+    speed = float(voice.get("speed", 0.90))
     if not 0.75 <= speed <= 1.15:
         raise ValueError("Kokoro speed outside 0.75..1.15")
-    meta["voice"] = {"engine":"kokoro", "preset":"bm_george", "speed":speed}
+    pauses = voice.get("pauses") or {}
+    if not isinstance(pauses, dict):
+        raise ValueError("voice.pauses must be a YAML mapping")
+    pause_profile = {
+        "sentence_ms":int(pauses.get("sentence_ms",340)),
+        "paragraph_ms":int(pauses.get("paragraph_ms",880)),
+        "question_ms":int(pauses.get("question_ms",500))
+    }
+    if any(not 0 <= value <= 2500 for value in pause_profile.values()):
+        raise ValueError("Narration pauses must be 0..2500 milliseconds")
+    if pause_profile["paragraph_ms"] < pause_profile["sentence_ms"]:
+        raise ValueError("Paragraph pause must be >= sentence pause")
+    mastering = str(voice.get("mastering","gentle")).lower()
+    if mastering not in ("gentle","none"):
+        raise ValueError("voice.mastering must be 'gentle' or 'none'")
+    meta["voice"] = {"engine":"kokoro","preset":"bm_george","speed":speed,
+                     "pauses":pause_profile,"mastering":mastering}
     Path(output).mkdir(parents=True, exist_ok=True)
     (Path(output) / "narration_source.txt").write_text(body + "\n", encoding="utf-8")
     write_json(Path(output) / "episode.json", meta)
