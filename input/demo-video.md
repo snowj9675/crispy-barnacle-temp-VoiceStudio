@@ -2,6 +2,7 @@
 title: The Quiet Power of Self-Control
 slug: quiet-power-self-control
 preview: true
+test_revision: 2
 voice:
   speed: 0.90
 visuals:
