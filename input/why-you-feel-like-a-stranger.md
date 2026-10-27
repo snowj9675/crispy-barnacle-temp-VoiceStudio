@@ -1,6 +1,7 @@
 ---
 title: Why You Feel Like a Stranger in Your Own Life
 slug: the-invisible-prison-of-being-accepted
+render_retry: 1
 preview: false
 voice:
   engine: kokoro
