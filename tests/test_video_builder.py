@@ -93,5 +93,29 @@ class VideoBuilderTests(unittest.TestCase):
             self.assertEqual(sb["scenes"][0]["replaced_unavailable_source"],"pexels:oversized")
             self.assertTrue((t/"video.mp4").exists())
 
+    def test_episode_voice_pause_controls_are_preserved(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/"input").mkdir()
+            episode=root/"input"/"story.md"
+            episode.write_text(
+                "---\n"
+                "title: Story\npreview: true\n"
+                "voice:\n  speed: 0.86\n  mastering: gentle\n"
+                "  pauses:\n    sentence_ms: 400\n    paragraph_ms: 950\n"
+                "    question_ms: 600\n"
+                "---\n"
+                "This is a complete paragraph worth narrating, full of ideas.\n",
+                encoding="utf-8"
+            )
+            with patch.object(b.Path,"cwd",return_value=root):
+                b.parse_episode(episode,root/"build","")
+            meta=json.loads((root/"build"/"episode.json").read_text())
+            self.assertEqual(meta["voice"]["speed"],0.86)
+            self.assertEqual(meta["voice"]["pauses"]["paragraph_ms"],950)
+            self.assertEqual(meta["voice"]["pauses"]["question_ms"],600)
+            self.assertEqual(meta["voice"]["mastering"],"gentle")
+
 if __name__=="__main__":
     unittest.main()
